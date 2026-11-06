@@ -4,9 +4,10 @@
 
 A computer-vision system for hockey game film. YOLO detects everyone on the ice, a CNN sorts players into teams by jersey colour, and movement is tracked frame by frame to estimate player speed, distance covered and offensive pressure.
 
-## Credit
-
-This repository is a **fork of [Raúl Vizcarra Chirinos's IceHockey_ComputerVision_PyTorch](https://github.com/rvizcarra15/IceHockey_ComputerVision_PyTorch)**, which provides the original tracking pipeline, CNN team classifier, rink-zone code and sample datasets, explained in his article [Spicing up Ice Hockey with AI: Player Tracking with Computer Vision](https://towardsdatascience.com/spicing-up-ice-hockey-with-ai-player-tracking-with-computer-vision-ce9ceec9122a). All credit for the original code goes to him.
+> **Inspo from: [Raúl Vizcarra Chirinos](https://github.com/rvizcarra15)**, whose open-source project
+> [IceHockey_ComputerVision_PyTorch](https://github.com/rvizcarra15/IceHockey_ComputerVision_PyTorch)
+> and article [Spicing up Ice Hockey with AI](https://towardsdatascience.com/spicing-up-ice-hockey-with-ai-player-tracking-with-computer-vision-ce9ceec9122a)
+> this project builds on. The tracking pipeline, rink-zone code and sample datasets come from his work, and his original commits are kept in this repo's history.
 
 ## What I added
 
