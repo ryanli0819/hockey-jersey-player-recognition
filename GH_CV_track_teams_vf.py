@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Jul  3 18:14:55 2024
-
-@author: Raúl Vizcarra Chirinos
+Original author: Raúl Vizcarra Chirinos (2024)
+  https://github.com/rvizcarra15/IceHockey_ComputerVision_PyTorch
+Adapted by Ryan Li: comments translated to Chinese, relative paths,
+GPU (CUDA) loading, and a Puck class added to the team classifier.
 """
-
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -15,15 +15,15 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 from PIL import Image
 
-# MODEL INPUTS
-model_path = 'D:/PYTHON/yolov8x.pt'
-video_path = 'D:/PYTHON/video_input.mp4'
-output_path = 'D:/PYTHON/output_video.mp4'
-tracks_path = 'D:/PYTHON/stubs/track_stubs.pkl'
-classifier_path = 'D:/PYTHON/hockey_team_classifier.pth'
+# 模型输入
+model_path = 'yolov8x.pt'
+video_path = './video_input.mp4'
+output_path = './output_video.mp4'
+tracks_path = 'stubs/track_stubs.pkl'
+classifier_path = 'hockey_team_classifier.pth'
 
-#***************** Loads models and ice rink coordinates**********************#
-class_names = ['Referee', 'Tm_white', 'Tm_yellow']
+# ***************** 加载模型和冰场坐标 **********************#
+class_names = ['Referee', 'Tm_white', 'Tm_yellow','Puck']
 
 class HockeyAnalyzer:
     def __init__(self, model_path, classifier_path):
@@ -36,7 +36,7 @@ class HockeyAnalyzer:
         ])
         self.rink_coordinates = np.array([[-450, 710], [2030, 710], [948, 61], [352, 61]])
         self.zone_white = [(180, 150), (1100, 150), (900, 61), (352, 61)]
-        self.zone_yellow = [(-450, 710), (2030, 710), (1160, 150), (200, 150)]
+        self.zone_yellow = [(-450, 710), (2030, 710), (1160, 150), [200, 150]]
         
         self.pixel_to_meter_conversion()
         self.previous_positions = {}
@@ -45,7 +45,7 @@ class HockeyAnalyzer:
             'Tm_yellow': {'distance': 0, 'speed': [], 'count': 0, 'offensive_pressure': 0}
         }
         
-#******************** Detect objects in each frame ***************************#
+# ******************** 检测每帧中的对象 ***************************#
     def detect_frames(self, frames):
         batch_size = 20 
         detections = [] 
@@ -54,11 +54,11 @@ class HockeyAnalyzer:
             detections += detections_batch
         return detections
     
-#*********************** Loads CNN Model**************************************#
+# *********************** 加载CNN分类器模型 **************************************#
 
     def load_classifier(self, classifier_path):
         model = CNNModel()
-        model.load_state_dict(torch.load(classifier_path, map_location=torch.device('cpu')))
+        model.load_state_dict(torch.load(classifier_path, map_location=torch.device('cuda')))
         model.eval()
         return model
 
@@ -71,25 +71,25 @@ class HockeyAnalyzer:
         return team
 
 
-#*****************Pixel-based measurements to meters**************************#
+# ***************** 像素到米的转换 **************************#
     def pixel_to_meter_conversion(self):
-        #Rink real dimensions in meters
+        # 冰场实际尺寸（米）
         rink_width_m = 15
         rink_height_m = 30
 
-        #Coordinates for rink dimensions
+        # 冰场尺寸的像素坐标
         left_pixel, right_pixel = self.rink_coordinates[0][0], self.rink_coordinates[1][0]
         top_pixel, bottom_pixel = self.rink_coordinates[2][1], self.rink_coordinates[0][1]
 
-        #Conversion factors
+        # 转换因子
         self.pixels_per_meter_x = (right_pixel - left_pixel) / rink_width_m
         self.pixels_per_meter_y = (bottom_pixel - top_pixel) / rink_height_m
 
-        #Apply conversion factor
+        # 应用转换因子
     def convert_pixels_to_meters(self, distance_pixels):
         return distance_pixels / self.pixels_per_meter_x, distance_pixels / self.pixels_per_meter_y
     
-#**************** Speed: meters per second************************************#
+# **************** 速度计算：米/秒 ************************************#
 
     def calculate_speed(self, track_id, x_center, y_center, fps):
         current_position = (x_center, y_center)
@@ -103,7 +103,7 @@ class HockeyAnalyzer:
         self.previous_positions[track_id] = current_position
         return speed_meters_per_second
 
-#*********** Locate player's position in Offensive zones**********************#
+# *********** 判断球员位置是否在进攻区内 **********************#
 
     def is_inside_zone(self, position, zone):
           x, y = position
@@ -123,7 +123,7 @@ class HockeyAnalyzer:
           return inside
       
         
-#*******************************Performance metrics***************************#
+# ******************************* 性能指标 ***************************#
     def draw_stats(self, frame):
          avg_speed_white = np.mean(self.team_stats['Tm_white']['speed']) if self.team_stats['Tm_white']['count'] > 0 else 0
          avg_speed_yellow = np.mean(self.team_stats['Tm_yellow']['speed']) if self.team_stats['Tm_yellow']['count'] > 0 else 0
@@ -138,15 +138,15 @@ class HockeyAnalyzer:
     
          table = [
              ["", "Away_White", "Home_Yellow"],
-             ["Average Speed\nPlayer", f"{avg_speed_white:.2f} m/s", f"{avg_speed_yellow:.2f} m/s"],
-             ["Distance\nCovered", f"{distance_white:.2f} m", f"{distance_yellow:.2f} m"],
-             ["Offensive\nPressure %", f"{Pressure_ratio_W:.2f} %", f"{Pressure_ratio_Y:.2f} %"],
+             ["平均速度\n(球员)", f"{avg_speed_white:.2f} m/s", f"{avg_speed_yellow:.2f} m/s"],
+             ["覆盖\n距离", f"{distance_white:.2f} m", f"{distance_yellow:.2f} m"],
+             ["进攻\n压力 %", f"{Pressure_ratio_W:.2f} %", f"{Pressure_ratio_Y:.2f} %"],
          ]
     
          text_color = (0, 0, 0)  
          start_x, start_y = 10, 590 
-         row_height = 30     # Manage Height between rows
-         column_width = 150  # Manage Width  between rows
+         row_height = 30     # 行高
+         column_width = 150  # 列宽
          font_scale = 1  
     
          def put_multiline_text(frame, text, position, font, font_scale, color, thickness, line_type, line_spacing=1.0):
@@ -155,7 +155,7 @@ class HockeyAnalyzer:
                  y = y0 + i * dy
                  cv2.putText(frame, line, (position[0], y), font, font_scale, color, thickness, line_type)
         
-         #Adjust multiline rows
+         # 调整多行文本的行距
          for i, row in enumerate(table):
              for j, text in enumerate(row):
                  if i in [1,2, 3]:  
@@ -182,7 +182,7 @@ class HockeyAnalyzer:
                          cv2.LINE_AA,
                      )       
           
-#********************* Track and update game stats****************************#
+# ********************* 追踪并更新比赛统计数据 ****************************#
 
     def update_team_stats(self, team, speed, distance, position):
         if team in self.team_stats:
@@ -198,17 +198,17 @@ class HockeyAnalyzer:
                     self.team_stats[team]['offensive_pressure'] += distance
 
 
-#********* Ellipse for tracking players instead of Bounding boxes*************#
+# ********* 使用椭圆标记球员（替代边界框） *************#
     def draw_ellipse(self, frame, bbox, color, track_id=None, team=None):
         y2 = int(bbox[3])
         x_center = (int(bbox[0]) + int(bbox[2])) // 2
         width = int(bbox[2]) - int(bbox[0])
     
         if team == 'Referee':
-            color = (0, 255, 255)
+            color = (0, 255, 255)  # 裁判：黄色
             text_color = (0, 0, 0)
         else:
-            color = (255, 0, 0)
+            color = (255, 0, 0)  # 球员：红色
             text_color = (255, 255, 255)
 
         cv2.ellipse(
@@ -253,27 +253,27 @@ class HockeyAnalyzer:
 
         return frame
     
-#***************************Dashboard*****************************************#
+# *************************** 数据看板 *****************************************#
     
     def draw_semi_transparent_rectangle(self, frame):
         overlay = frame.copy()
-        alpha = 0.7  # Adjust Transparency
+        alpha = 0.7  # 调整透明度
         
         bottom_left = (0, 710)
         bottom_right = (450, 710)
         upper_left = (0, 570)
         upper_right = (450, 570)
         
-        border_color = (169, 169, 169)  # Color
+        border_color = (169, 169, 169)  # 边框颜色
         border_thickness = 3
         cv2.rectangle(frame, upper_left, bottom_right, border_color, border_thickness)
         cv2.rectangle(overlay, upper_left, bottom_right, (128, 128, 128), -1)
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
         
-        #Draw stats 
+        # 绘制统计数据 
         self.draw_stats(frame)
  
-#******************* Loads Tracked Data (pickle file )************************#
+# ******************* 加载追踪数据（pickle文件） ************************#
 
     def analyze_video(self, video_path, output_path, tracks_path):
           with open(tracks_path, 'rb') as f:
@@ -281,15 +281,15 @@ class HockeyAnalyzer:
 
           cap = cv2.VideoCapture(video_path)
           if not cap.isOpened():
-              print("Error: Could not open video.")
+              print("错误：无法打开视频文件")
               return
           
           fps = cap.get(cv2.CAP_PROP_FPS)
           frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
           frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-          # Codec and VideoWriter object
-          fourcc = cv2.VideoWriter_fourcc(*'XVID')
+          # 编解码器和VideoWriter对象
+          fourcc =cv2.VideoWriter_fourcc(*'mp4v')
           out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
 
           frame_num = 0
@@ -298,39 +298,39 @@ class HockeyAnalyzer:
               if not ret:
                   break
               
-#***********Checks if the player falls within the rink area*******************#
+# *********** 检查球员是否在冰场区域内 *******************#
               mask = np.zeros(frame.shape[:2], dtype=np.uint8)
               cv2.fillConvexPoly(mask, self.rink_coordinates, 1)
               mask = mask.astype(bool)
-              # Draw rink area
-              #cv2.polylines(frame, [self.rink_coordinates], isClosed=True, color=(0, 255, 0), thickness=2)
+              # 绘制冰场区域
+              # cv2.polylines(frame, [self.rink_coordinates], isClosed=True, color=(0, 255, 0), thickness=2)
 
-              #Get tracks from frame
+              # 获取当前帧的追踪数据
               player_dict = tracks["person"][frame_num]
               for track_id, player in player_dict.items():
                   bbox = player["bbox"]
 
-              #Check if players are within the ice rink
+              # 检查球员是否在冰场内
                   x_center = int((bbox[0] + bbox[2]) / 2)
                   y_center = int((bbox[1] + bbox[3]) / 2)
 
                   if not mask[y_center, x_center]:
                       continue  
 
-#***************************Team Prediction***********************************#
+# *************************** 队伍预测 ***********************************#
                   x1, y1, x2, y2 = map(int, bbox)
                   cropped_image = frame[y1:y2, x1:x2]
                   cropped_pil_image = Image.fromarray(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB))
                   transformed_image = self.transform(cropped_pil_image).unsqueeze(0)
                   team = self.predict_team(transformed_image)
 
-#************ Identify Teams, Players, assign labels**************************#
+# ************ 识别队伍、球员并分配标签 **************************#
                   self.draw_ellipse(frame, bbox, (0, 255, 0), track_id, team)
                   
                   font_scale = 1  
                   text_offset = -20  
                   
-                  #Identify Referee
+                  # 识别裁判
                   if team == 'Referee':
                       rectangle_width = 60
                       rectangle_height = 25
@@ -342,16 +342,16 @@ class HockeyAnalyzer:
                       cv2.rectangle(frame,
                                     (int(x1_rect), int(y1_rect)),
                                     (int(x2_rect), int(y2_rect)),
-                                    (0, 0, 0),  
+                                    (0, 0, 0),  # 黑色背景
                                     cv2.FILLED)
-                      text_color = (255, 255, 255)   
+                      text_color = (255, 255, 255)   # 白色文本
                   else:
                       if team == 'Tm_white':
-                          text_color = (255, 215, 0)  # White  Team: Blue labels
+                          text_color = (255, 215, 0)  # 白队：金色标签
                       else:
-                          text_color = (0, 255, 255)  # Yellow Team: Yellow labels
+                          text_color = (0, 255, 255)  # 黄队：青色标签
                   
-              #Draw Team labels
+              # 绘制队伍标签
                   cv2.putText(
                       frame,
                       team,
@@ -364,7 +364,7 @@ class HockeyAnalyzer:
                   
                   speed = self.calculate_speed(track_id, x_center, y_center, fps)
                   
-              #Speed labels
+              # 速度标签
                   speed_font_scale = 0.8  
                   speed_y_position = int(y1) + 20
                   if speed_y_position > int(y1) - 5:
@@ -372,7 +372,7 @@ class HockeyAnalyzer:
 
                   cv2.putText(
                       frame,
-                      f"Speed: {speed:.2f} m/s",  
+                      f"速度: {speed:.2f} m/s",  
                       (int(x1), speed_y_position),  
                       cv2.FONT_HERSHEY_PLAIN,       
                       speed_font_scale,
@@ -381,14 +381,14 @@ class HockeyAnalyzer:
                   )
 
                 
-               #Draw dashboard
+               # 绘制数据看板
                   self.draw_semi_transparent_rectangle(frame)
                   
                   distance = speed / fps
                   position = (x_center, y_center)
                   self.update_team_stats(team, speed, distance, position)
                     
-              #Process output video
+              # 处理输出视频
               out.write(frame)
               frame_num += 1
 
@@ -396,7 +396,7 @@ class HockeyAnalyzer:
           out.release()
 
 
-#********************CNN -Model - Architecture********************************#
+# ******************** CNN模型架构 ********************************#
 class CNNModel(nn.Module):
     def __init__(self):
         super(CNNModel, self).__init__()
@@ -418,7 +418,6 @@ class CNNModel(nn.Module):
         x = self.fc2(x)
         return x
 
-#*********Execute YOLO-HockeyAnalyzer/classifier and Save Output**************#
+# ********* 执行YOLO-HockeyAnalyzer/分类器并保存输出 **************#
 analyzer = HockeyAnalyzer(model_path, classifier_path)
 analyzer.analyze_video(video_path, output_path, tracks_path)
-

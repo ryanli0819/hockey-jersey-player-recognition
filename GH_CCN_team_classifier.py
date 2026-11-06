@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jun 13 18:29:51 2024
-
-@author: Raúl Vizcarra Chirinos
+Original author: Raúl Vizcarra Chirinos (2024)
+  https://github.com/rvizcarra15/IceHockey_ComputerVision_PyTorch
+Adapted by Ryan Li: comments translated to Chinese, relative paths,
+GPU (CUDA) loading, and a Puck class added to the team classifier.
 """
-# ************CONVOLUTIONAL NEURAL NETWORK-THREE CLASSES DETECTION**************************
-# REFEREE
-# WHITE TEAM (white_away)
-# YELLOW TEAM (yellow_home)
-
 import os
 import torch
 import torch.nn as nn
@@ -21,9 +17,9 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import matplotlib.pyplot as plt
 
 
-#******************************Data transformation********************************************
-# Training and Validation Datasets
-data_dir = 'D:/PYTHON/teams_sample_dataset'
+# ****************************** 数据转换 ********************************************
+# 训练和验证数据集
+data_dir = 'teams_sample_dataset'
 
 transform = transforms.Compose([
     transforms.Resize((150, 150)),
@@ -31,14 +27,14 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
 
-# Load datasets
+# 加载数据集
 train_dataset = datasets.ImageFolder(os.path.join(data_dir, 'train'), transform=transform)
 val_dataset = datasets.ImageFolder(os.path.join(data_dir, 'val'), transform=transform)
 
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
-#********************************CNN Model Architecture**************************************
+# ******************************** CNN模型架构 **************************************
 class CNNModel(nn.Module):
     def __init__(self):
         super(CNNModel, self).__init__()
@@ -48,7 +44,7 @@ class CNNModel(nn.Module):
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.fc1 = nn.Linear(128 * 18 * 18, 512)
         self.dropout = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(512, 3)  #Three Classes
+        self.fc2 = nn.Linear(512, 4)  # 三分类
         
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
@@ -61,14 +57,14 @@ class CNNModel(nn.Module):
         return x
     
     
-#********************************CNN TRAINING**********************************************
+# ******************************** CNN训练 **********************************************
 
-# Model-loss function-optimizer
+# 模型-损失函数-优化器
 model = CNNModel()
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-#*********************************Training*************************************************
+# ********************************* 训练过程 *************************************************
 num_epochs = 10
 train_losses, val_losses = [], []
 
@@ -100,7 +96,7 @@ for epoch in range(num_epochs):
             all_labels.extend(labels.tolist())
             all_preds.extend(preds.tolist())
             
-#********************************METRICS & PERFORMANCE************************************
+# ******************************** 性能指标 ************************************
     
     val_losses.append(val_loss / len(val_loader))
     val_accuracy = accuracy_score(all_labels, all_preds)
@@ -116,17 +112,17 @@ for epoch in range(num_epochs):
           f"Val Recall: {val_recall:.4f}, "
           f"Val F1 Score: {val_f1:.4f}")
     
-#*******************************SHOW METRICS & PERFORMANCE**********************************
-plt.plot(train_losses, label='Train Loss')
-plt.plot(val_losses, label='Validation Loss')
+# ******************************* 显示性能指标 **********************************
+plt.plot(train_losses, label='训练损失')
+plt.plot(val_losses, label='验证损失')
 plt.legend()
 plt.show()
 
-# SAVE THE MODEL FOR THE GH_CV_track_teams CODE
-torch.save(model.state_dict(), 'D:/PYTHON/hockey_team_classifier.pth')
+# 保存模型供GH_CV_track_teams代码使用
+torch.save(model.state_dict(), 'hockey_team_classifier.pth')
 
 
-# ********************TEST MODEL PREDICTIONS WITH SAMPLE DATASET***************************
+# ******************** 使用样本数据集测试模型预测 ***************************
 
 import os
 import torch
@@ -135,10 +131,10 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 from PIL import Image
 
-# SAMPLE DATASET FOR VALIDATION
-test_dir = 'D:/PYTHON/validation_dataset'
+# 验证用样本数据集
+test_dir = 'validation_dataset'
 
-# CNN MODEL FOR TEAM PREDICTIONS
+# 用于队伍预测的CNN模型
 class CNNModel(nn.Module):
     def __init__(self):
         super(CNNModel, self).__init__()
@@ -148,21 +144,22 @@ class CNNModel(nn.Module):
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.fc1 = nn.Linear(128 * 18 * 18, 512)
         self.dropout = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(512, 3)  # THREE CLASS DETECTION
+        self.fc2 = nn.Linear(512, 3)  # 三分类检测
         
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
         x = self.pool(F.relu(self.conv3(x)))
+        x=torch.cat(x,self.fc1(x))
         x = x.view(-1, 128 * 18 * 18)
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)  
         return x
 
-# CNN MODEL PREVIOUSLY SAVED
+# 加载之前保存的CNN模型
 model = CNNModel()
-model.load_state_dict(torch.load('D:/PYTHON/hockey_team_classifier.pth'))
+model.load_state_dict(torch.load('hockey_team_classifier.pth'))
 model.eval()
 
 transform = transforms.Compose([
@@ -171,16 +168,16 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
 
-#******************ITERATION ON SAMPLE IMAGES-ACCURACY TEST*****************************
+# ****************** 在样本图像上迭代进行准确率测试 *****************************
 
-class_names = ['team_referee', 'team_away', 'team_home']
+class_names = ['team_referee', 'team_away', 'team_home','puck']
 
 def predict_image(image_path, model, transform):
-# LOADS DATASET
+    # 加载数据集
     image = Image.open(image_path)
     image = transform(image).unsqueeze(0)  
 
-# MAKES PREDICTIONS
+    # 进行预测
     with torch.no_grad():
         output = model(image)
         _, predicted = torch.max(output, 1)  
@@ -191,10 +188,4 @@ for image_name in os.listdir(test_dir):
     image_path = os.path.join(test_dir, image_name)
     if os.path.isfile(image_path):  
         predicted_team = predict_image(image_path, model, transform)
-        print(f'Image {image_name}: The player belongs to {predicted_team}')
-        
-        
-
-
-
-
+        print(f'图像 {image_name}: 球员属于 {predicted_team}')
